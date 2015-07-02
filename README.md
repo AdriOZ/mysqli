@@ -83,5 +83,5 @@ There are two methods to execute custom statements:
 
 Tha main difference between them is that **customQuery** is designed to execute
 queries, because it makes an array with the result of the query. On the other hand,
-**customStatement** return directly the result of executing the statement; so,
+**customStatement** returns directly the result of executing the statement, so
 it can be used for insert, update, delete and query clauses.

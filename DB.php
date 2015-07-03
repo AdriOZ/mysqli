@@ -51,6 +51,7 @@ class DB {
     public function __destruct () {
         if ( !is_null( self::$_connection ) ) {
             mysqli_close( self::$_connection );
+            self::$_connection = null;
         }
     }
 
@@ -93,15 +94,18 @@ class DB {
      */
     public function simpleQuery ( $table = '', $fields = array( '*' ),
         $filters = array() ) {
-        $where = array();   # Parsed filters
-
-        foreach ( $filters as $key => $value ) {
-            $where[] = $key.'='.$this->_parseValue( $value );
-        }
-
         # Build the query
-        $statement = 'SELECT '.implode( ',', $fields ).' FROM '.$table.' WHERE '
-            .implode( ' AND ', $where );
+        $statement = 'SELECT '.implode( ',', $fields ).' FROM '.$table;
+
+        # Optional filters
+        if ( count( $filters ) > 0 ) {
+            $where = array();   # Parsed filters
+
+            foreach ( $filters as $key => $value ) {
+                $where[] = $key.'='.$this->_parseValue( $value );
+            }
+            $statement .= ' WHERE '.implode( ' AND ', $where );
+        }
 
         # Execute and return
         return $this->_fetchResult( $this->_executeStatement( $statement ) );
@@ -140,19 +144,22 @@ class DB {
     public function update ( $table = '', $data = array(),
         $filters = array() ) {
         $sets = array();    # Array of sets statement (SET field=value)
-        $where = array();   # Array of filters
 
         foreach ( $data as $key => $value ) {
             $sets[] = $key.'='.$this->_parseValue( $value );
         }
 
-        foreach ( $filters as $key => $value ) {
-            $where[] = $key.'='.$this->_parseValue( $value );
-        }
-
         # Build the update statement
-        $statement = 'UPDATE '.$table.' SET '.implode( ',', $sets ).' WHERE '
-            .implode( ' AND ', $where );
+        $statement = 'UPDATE '.$table.' SET '.implode( ',', $sets );
+
+        if ( count( $filters ) > 0 ) {
+            $where = array();   # Array of filters
+
+            foreach ( $filters as $key => $value ) {
+                $where[] = $key.'='.$this->_parseValue( $value );
+            }
+            $statement .= ' WHERE '.implode( ' AND ', $where );
+        }
 
         # Execute and return
         return $this->_executeStatement( $statement );
@@ -165,14 +172,18 @@ class DB {
      * @return boolean          Returns true if the data is correctly removed.
      */
     public function delete ( $table = '', $filters = array() ) {
-        $where = array();   # Array with the filters
-
-        foreach ( $filters as $key => $value ) {
-            $where[] = $key.'='.$this->_parseValue( $value );
-        }
-
         # Build the delete statement
-        $statement = 'DELETE FROM '.$table.' WHERE '.implode( ' AND ', $where );
+        $statement = 'DELETE FROM '.$table;
+
+        # Optional filters
+        if ( count( $filters ) > 0 ) {
+            $where = array();   # Array with the filters
+
+            foreach ( $filters as $key => $value ) {
+                $where[] = $key.'='.$this->_parseValue( $value );
+            }
+            $statement .= ' WHERE '.implode( ' AND ', $where );
+        }
 
         # Execute and return
         return $this->_executeStatement( $statement );

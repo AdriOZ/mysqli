@@ -1,87 +1,96 @@
-# mysqli
-##Simple library to connect to mysql in PHP
-The library abstracts the connection to MySQL in PHP. It offers some simple
-functions that makes easier to execute statements. Furthermore, it parses strings
-to avoid SQL and HTML injection.
-###Configuration
-Example of configuration:
-```PHP
-private static $_HOST = 'localhost';
+# DB
 
-private static $_DB = 'myDB';
+I made this class when I started in my first job. I have been modifying through the years, and I think that I will continue doing so.
 
-private static $_USER = 'root';
+I always use it whenever I need something easy and reliable. Sometimes, an Entity Manager is too much and you just need: one Class, no composer, zero namespaces, zero dependency inyection... just one Class.
 
-private static $_PASS = 'root';
-```
-###Code Examples
-####Insert
-```PHP
-$example = new DB();
-$example->insert(
-    'people',               # Table
-    array(                  # Insert
-        'name' => 'Mike',
-        'age' => 30
-    )
-);
-```
-The insert clause generated is:
-```SQL
-INSERT INTO people (name,age) VALUES ('Mike',30)
-```
-####Update
-```PHP
-$example = new DB();
-$example->update(
-    'people',               # Table
-    array(                  # Update
-        'name' => 'Jimmy',
-        'email' => 'jimmyjimmy@email.com'
-    ),
-    array(                  # Filters
-        'id' => 4
-    )
-);
-```
-The update clause generated is:
-```SQL
-UPDATE people SET name='Jimmy',email='jimmyjimmy@email.com' WHERE id=4
-```
-####Delete
-```PHP
-$example = new DB();
-$example->delete(
-    'people',                   # Table
-    array( 'name' => 'Jimmy' )  # Filters
-);
-```
-The delete clause generated is:
-```SQL
-DELETE FROM people WHERE name='Jimmy'
-```
-####Query
-```PHP
-$example = new DB();
-$example->simpleQuery(
-    'people',               # Table
-    array( '*' ),           # Fields
-    array(                  # Filters
-        'name' => 'Mike',
-        'age' => 30
-    )
-);
-```
-The delete clause generated is:
-```SQL
-SELECT * FROM people WHERE name='Mike' AND age=30
-```
-####Custom Statement
-There are two methods to execute custom statements:
-* **customQuery**
-* **customStatement**
+The usage is pretty straightforward:
 
-Tha main difference between them is that **customQuery** is designed to execute
-queries, because it makes an array with the result of the query. On the other hand,
-**customStatement** returns directly the result of executing the statement, so
-it can be used for insert, update, delete and query clauses.
+```php
+
+include 'DB.php';
+
+$db = new DB('localhost', 'user', 'password', 'database')
+
+/* Insert */
+$db->Insert('person', [
+    'name' => 'John'
+]);
+
+$db->Bulk('person', ['name', 'lastname'], [
+    ['Bob', 'Anderson'],
+    ['Kirk', 'Jefferson']
+]);
+
+/* Update */
+$id = $db->LastId();
+$db->Update('person', ['name' => 'Paul'], ['id' => $id]);
+
+/* Delete*/
+$db->Delete('person', ['name' => 'John']);
+
+/* Transactions */
+$db->Begin();
+
+$result = $db->Bulk('person', ['name', 'lastname'], [
+    ['Bob', 'Anderson'],
+    ['Kirk', 'Jefferson']
+]);
+
+$result
+    ? $db->Commit()
+    : $db->Rollback();
+
+/* Plain Statement */
+$db->Statement("SET FOREIGN_KEY_CHECKS=0");
+
+/* Simple Select */
+$persons = $db->Select(
+    table: 'person',
+    fields: ['name', 'lastname'],
+    where: ['lastname' => 'Anderson'],
+    orderBy: 'name',
+    orderType: 'ASC',
+    limit: 10
+);
+
+foreach ($persons as $person) {
+    echo $person->name . ' ' . $person->lastname;
+}
+
+/* Even easier */
+$persons = $db->Where('person', ['name' => 'John']);
+
+foreach ($persons as $person) {
+    echo $person->name . ' ' . $person->lastname;
+}
+
+/* Just one record */
+$person = $db->Find('person', ['name' => 'John']);
+echo $person->name . ' ' . $person->lastname;
+
+/* Complex Queries */
+$min = 18;
+$max = 35;
+
+$persons = $db->Query(
+    "SELECT
+        p.name,
+        p.lastname,
+        c.name AS city
+    FROM
+        person p
+    JOIN
+        city c
+    ON
+        p.city_id = c.id
+    WHERE
+        p.age > '%d' AND p.age < '%d'",
+    $min,
+    $max
+);
+
+foreach ($persons as $person) {
+    echo $person->name . ' ' . $person->lastname . ' / ' . $p->city;
+}
+```

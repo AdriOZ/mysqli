@@ -1,230 +1,336 @@
 <?php
-class DB {
+
+/**
+ * MySQL management.
+ */
+class DB
+{
     /**
-     * Host of the database.
-     * @var string
+     * Connection to mysql.
+     * @var mysqli
      */
-    private static $_HOST = '';
+    protected $connection;
 
     /**
-     * Name of the database.
-     * @var string
+     * @param string $host
+     * @param string $user
+     * @param string $pass
+     * @param string $db
+     * @throws Exception
      */
-    private static $_DB = '';
+    public function __construct(
+        string $host,
+        string $user,
+        string $pass,
+        string $db
+    ) {
+        $this->connection = mysqli_connect(
+            $host,
+            $user,
+            $pass,
+            $db
+        );
+
+        if (!$this->connection) {
+            throw new Exception(mysqli_connect_error());
+        }
+    }
 
     /**
-     * User registered in MySQL server.
-     * @var string
+     * Closes the connection when the object is removed from memory.
      */
-    private static $_USER = '';
+    public function __destruct()
+    {
+        if ($this->connection) {
+            mysqli_close($this->connection);
+        }
+    }
 
     /**
-     * Password of the user registered in MySQL server.
-     * @var string
+     * Parses a value to be used in a SQL statement.
+     * @param string $value The value to be parsed.
+     * @return string The parsed value.
      */
-    private static $_PASS = '';
-
-    # NOTE: static property, just one point of connection.
-    /**
-     * Connecion.
-     * @var resource
-     */
-    private static $_connection = null;
+    public function Parse(string $value)
+    {
+        return mysqli_real_escape_string($this->connection, (string) $value);
+    }
 
     /**
-     * Begins the connection to the database.
+     * Executes the statement and returns the result.
+     * @param  string $stm Statement to be executed.
+     * @return mysqli_result|bool Returns the result of the statement or false if there was an error.
      */
-    public function __construct () {
-        if ( is_null( self::$_connection ) ) {
-            self::$_connection = mysqli_connect( self::$_HOST, self::$_USER,
-                self::$_PASS, self::$_DB );
-            # Checking for errors
-            if ( mysqli_errno( self::$_connection ) ) {
-                throw new Exception( 'Can\'t connect to database' );
+    public function Statement(string $stm): mysqli_result|bool
+    {
+        $tmp = mysqli_query($this->connection, $stm);
+        return $tmp ? $tmp : false;
+    }
+
+    /**
+     * Executes the query. Internally it uses sprintf, so the values starting % will be replaced.
+     * @param string $query Query to be executed.
+     * @param mixed $arguments Arguments to be replaced in the query
+     * @return bool|array If the query is SELECT, it returns an array of objects. Oterwhise, it returns a boolean.
+     */
+    public function Query(string $query, ...$arguments): bool|array
+    {
+        $values = [];
+        $result = false;
+
+        foreach ($arguments as $a) {
+            $values[] = $this->Parse($a);
+        }
+        $query = (string) call_user_func_array('vsprintf', [$query, $values]);
+
+        if ('' !== $query) {
+            $tmp = $this->Statement($query);
+
+            if ($tmp instanceof mysqli_result) {
+                $result = [];
+
+                while ($fetch = mysqli_fetch_object($tmp)) {
+                    $result[] = $fetch;
+                }
+            } else {
+                $result = $tmp;
             }
         }
+        return $result;
     }
 
     /**
-     * Close connection when object is destroyed.
+     * Simple SELECT builder.
+     * @param  string $table
+     * @param  array  $fields
+     * @param  array  $where
+     * @param  string $orderBy
+     * @param  string $orderType
+     * @param  int    $limit
+     * @return array
      */
-    public function __destruct () {
-        if ( !is_null( self::$_connection ) ) {
-            mysqli_close( self::$_connection );
-            self::$_connection = null;
-        }
-    }
+    public function Select(
+        string $table,
+        array $fields = ['*'],
+        array $where = [],
+        string|null $orderBy = null,
+        string $orderType = 'DESC',
+        int $limit = -1
+    ): array {
+        $query = 'SELECT ' . implode(',', $fields) . ' FROM ' . $table;
 
-    /**
-     * Returns the instance of the connection.
-     * @return resource mysqli connection.
-     */
-    public function getConnection () {
-        return mysqli_connect( self::$_HOST, self::$_USER, self::$_PASS,
-            self::$_DB );
-    }
+        if (!empty($where)) {
+            $query .= ' WHERE ';
+            $parsedValues = [];
 
-    /**
-     * Executes a custom statement.
-     * @param  string $statement Insert, update, delete or query clause.
-     * @return mixed            Result of executing the statement.
-     */
-    public function customStatement ( $statement ) {
-        $correct = mysqli_real_escape_string( self::$_connection, $statement );
-        return $this->_executeStatement( $correct );
-    }
-
-    /**
-     * Executes a custom query and returns an array of associative arrays
-     * with the data.
-     * @param  string $query Query clause.
-     * @return array        Array with the data.
-     */
-    public function customQuery ( $query = '' ) {
-        $statement = mysqli_real_escape_string( self::$_connection, $query );
-        return $this->_fetchResult( $this->_executeStatement( $statement ) );
-    }
-
-    /**
-     * Executes a simple query.
-     * @param  string $table   Tabla to search data.
-     * @param  array  $fields  Array of fields.
-     * @param  array  $filters Associative array with the filters.
-     * @return array          Fetched data.
-     */
-    public function simpleQuery ( $table = '', $fields = array( '*' ),
-        $filters = array() ) {
-        # Build the query
-        $statement = 'SELECT '.implode( ',', $fields ).' FROM '.$table;
-
-        # Optional filters
-        if ( count( $filters ) > 0 ) {
-            $where = array();   # Parsed filters
-
-            foreach ( $filters as $key => $value ) {
-                $where[] = $key.'='.$this->_parseValue( $value );
+            foreach ($where as $key => $value) {
+                if (is_null($value)) {
+                    $parsedValues[] = $key . " IS NULL";
+                } else {
+                    $parsedValues[] = $key . "='" . $this->Parse($value) . "'";
+                }
             }
-            $statement .= ' WHERE '.implode( ' AND ', $where );
+
+            $query .= implode(' AND ', $parsedValues);
         }
 
-        # Execute and return
-        return $this->_fetchResult( $this->_executeStatement( $statement ) );
-    }
-
-    /**
-     * Executes an insert clause.
-     * @param  string $table Table where the data is inserted.
-     * @param  array  $data  Associative array 'field name' => 'value'.
-     * @return boolean       Returns true if the data is correctly inserted.
-     */
-    public function insert ( $table = '', $data = array() ) {
-        $keys = array();            # Keys of the array.
-        $correctValues = array();   # Parsed values of the array.
-
-        foreach ( $data as $key => $value ) {
-            $keys[] = $key;
-            $correctValues = $this->_parseValue( $value );
+        if (!is_null($orderBy)) {
+            $query .= ' ORDER BY ' . $orderBy . ' ' . $orderType;
         }
-
-        # Build the insert statement
-        $statement = 'INSERT INTO '.$table.' ('.implode( ',', $keys ).') '
-            .' VALUES ('.implode( ',', $correctValues ).')';
-
-        # Execute and return
-        return $this->_executeStatement( $statement );
-    }
-
-    /**
-     * Executes an update clause.
-     * @param  string $table   Table that will be updated.
-     * @param  array  $data    Associative array 'field name' => 'value'.
-     * @param  array  $filters Associative array 'field name' => 'value'.
-     * @return boolean          Returns true if the data is correctly updated.
-     */
-    public function update ( $table = '', $data = array(),
-        $filters = array() ) {
-        $sets = array();    # Array of sets statement (SET field=value)
-
-        foreach ( $data as $key => $value ) {
-            $sets[] = $key.'='.$this->_parseValue( $value );
+        if ($limit !== -1) {
+            $query .= ' LIMIT ' . $limit;
         }
+        $tmp = $this->Statement($query);
 
-        # Build the update statement
-        $statement = 'UPDATE '.$table.' SET '.implode( ',', $sets );
+        if ($tmp) {
+            $result = [];
 
-        if ( count( $filters ) > 0 ) {
-            $where = array();   # Array of filters
-
-            foreach ( $filters as $key => $value ) {
-                $where[] = $key.'='.$this->_parseValue( $value );
+            while ($fetch = mysqli_fetch_object($tmp)) {
+                $result[] = $fetch;
             }
-            $statement .= ' WHERE '.implode( ' AND ', $where );
-        }
-
-        # Execute and return
-        return $this->_executeStatement( $statement );
-    }
-
-    /**
-     * Executes a delete clause.
-     * @param  string $table   Table from which data is deleted.
-     * @param  array  $filters Associative array 'field name' => 'value'.
-     * @return boolean          Returns true if the data is correctly removed.
-     */
-    public function delete ( $table = '', $filters = array() ) {
-        # Build the delete statement
-        $statement = 'DELETE FROM '.$table;
-
-        # Optional filters
-        if ( count( $filters ) > 0 ) {
-            $where = array();   # Array with the filters
-
-            foreach ( $filters as $key => $value ) {
-                $where[] = $key.'='.$this->_parseValue( $value );
-            }
-            $statement .= ' WHERE '.implode( ' AND ', $where );
-        }
-
-        # Execute and return
-        return $this->_executeStatement( $statement );
-    }
-
-    /**
-     * Returns the correct value of the value. Parses the string to avoid
-     * SQL and HTML injection.
-     * @param  mixed $value Value to parse.
-     * @return mixed        The parsed value.
-     */
-    private function _parseValue ( $value ) {
-        if ( is_string( $value ) ) {
-            $mysqlParsed = mysqli_real_escape_string( self::$_connection, $value );
-            $htmlParsed = htmlentities( $mysqlParsed );
-            $correct = '\''.$htmlParsed.'\'';     # Strings are placed between ''
         } else {
-            $correct = $value;
+            $result = false;
         }
-        return $correct;
+
+        return $result;
     }
 
     /**
-     * Executes the statement and returns the results.
-     * @param  string $statement Statement to execute.
-     * @return mixed            Result of executing the statement.
+     * Shortcut for Select(table, [*], where)
+     * @param string $table
+     * @param array  $conditions
+     * @return array
      */
-    private function _executeStatement ( $statement ) {
-        return mysqli_query( self::$_connection, $statement );
+    public function Where(string $table, array $conditions = []): array
+    {
+        return $this->Select($table, ['*'], $conditions);
     }
 
     /**
-     * Builds an array of associative arrays with the result of a query.
-     * @param  mixed $result Result of executing a query.
-     * @return array         Array with the data.
+     * Shortcut for Select(table, ['*'], where), but only returns one object.
+     * @param string $table
+     * @param array  $conditions
+     * @return object|null
      */
-    private function _fetchResult ( $result ) {
-        $data = array();
-        while ( $row = mysqli_fetch_assoc( $result ) ) {
-            $data[] = $row;
+    public function Find(string $table = '', array $conditions = []): object|null
+    {
+        $tmp = $this->Select($table, ['*'], $conditions, null, 'DESC', 1);
+        return !empty($tmp) ? $tmp[0] : null;
+    }
+
+    /**
+     * Inserts data into the database.
+     * @param  string $table Name of the table where the data will be inserted.
+     * @param  array  $data  Associative array with the fields of the table as keys and the
+     *                       values to be inserted as the values.
+     * @return bool True if the data is correctly inserted.
+     */
+    public function Insert(string $table, array $data = []): bool
+    {
+        $values = array_values($data);
+        $fields = array_keys($data);
+        $correctValues = [];
+
+        foreach ($values as $v) {
+            if (is_null($v)) {
+                $correctValues[] = "NULL";
+            } else {
+                $correctValues[] = "'" . $this->Parse($v) . "'";
+            }
         }
-        return $data;
+        $insert = 'INSERT INTO ' . $table . ' (' . implode(',', $fields) . ') VALUES (' . implode(',', $correctValues) . ')';
+        return (bool)$this->Statement($insert);
+    }
+
+
+    /**
+     * Makes a bulk insert of data into a table.
+     * @param string $table Name of the table.
+     * @param array $fields Array of string containing the fields that will be inserted.
+     * @param array $data Array of arrays containing the multiple inserts.
+     * @return bool True if the data is correctly inserted.
+     */
+    public function Bulk(string $table, array $fields = [], array $data = [[]]): bool
+    {
+        $bulkValues = [];
+
+        foreach ($data as $d) {
+            $correctValues = [];
+            foreach ($d as $v) {
+                if (is_null($v)) {
+                    $correctValues[] = "NULL";
+                } else {
+                    $correctValues[] = "'" . $this->Parse($v) . "'";
+                }
+            }
+            $bulkValues[] = '(' . implode(',', $correctValues) . ')';
+        }
+        $insert = 'INSERT INTO ' . $table . ' (' . implode(',', $fields) . ') VALUES ' . implode(',', $bulkValues);
+        return (bool)$this->Statement($insert);
+    }
+
+    /**
+     * Updates the data of the database.
+     * @param  string $table   Name of the table to be updated.
+     * @param  array  $data    Associative array with the fields of the table as keys and the
+     *                         values to be inserted as the values of the array.
+     * @param array   $conditions Associative array withe the fields of the table as keys, and the
+     *                         values of the filters as the values of the array.
+     * @return boolean True if the data is correctly updated.
+     */
+    public function Update(string $table, array $data = [], array $conditions = []): bool
+    {
+        $update = 'UPDATE ' . $table . ' SET ';
+        $parsedValues = [];
+
+        foreach ($data as $key => $value) {
+            if (is_null($value)) {
+                $parsedValues[] = $key . "=" . "NULL";
+            } else {
+                $parsedValues[] = $key . "='" . $this->Parse($value) . "'";
+            }
+        }
+        $update .= implode(',', $parsedValues);
+
+        if (!empty($conditions)) {
+            $update .= ' WHERE ';
+            $parsedFilters = [];
+
+            foreach ($conditions as $key => $value) {
+                $parsedFilters[] = $key . "='" . $this->Parse($value) . "'";
+            }
+
+            $update .= implode(' AND ', $parsedFilters);
+        }
+        return (bool)$this->Statement($update);
+    }
+
+    /**
+     * Deletes data from the database.
+     * @param  string $table   Affected table.
+     * @param  array  $filters Associative array with the keys of the array
+     *                         as the fields and the values of the arrays as the values used in the filter.
+     * @return boolean True if the data is correctly removed.
+     */
+    public function Delete(string $table, array $filters = []): bool
+    {
+        $del = 'DELETE FROM ' . $table;
+
+        if (!empty($filters)) {
+            $del .= ' WHERE ';
+            $parsedFilters = [];
+
+            foreach ($filters as $key => $value) {
+                $parsedFilters[] = $key . "='" . $this->Parse($value) . "'";
+            }
+
+            $del .= implode(' AND ', $parsedFilters);
+        }
+        return (bool)$this->Statement($del);
+    }
+
+    /**
+     * Begins a transaction.
+     * @return bool
+     */
+    public function Begin(): bool
+    {
+        return mysqli_begin_transaction($this->connection);
+    }
+
+    /**
+     * Commits the transaction.
+     * @return bool
+     */
+    public function Commit(): bool
+    {
+        return mysqli_commit($this->connection);
+    }
+
+    /**
+     * Reverts the transaction.
+     * @return bool
+     */
+    public function Rollback(): bool
+    {
+        return mysqli_rollback($this->connection);
+    }
+
+    /**
+     * Returns the Id of the last inserted entity.
+     * @return int|string
+     */
+    public function LastId(): int
+    {
+        return (int)mysqli_insert_id($this->connection);
+    }
+
+    /**
+     * Returns the last error message.
+     * @return string 
+     */
+    public function GetError(): string
+    {
+        return mysqli_error($this->connection);
     }
 }

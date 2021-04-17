@@ -1,8 +1,14 @@
 # DB
 
-I made this class when I started in my first job. I have been modifying through the years, and I think that I will continue doing so.
+I made this class back in 2015 when I started programming in my first job, because back then, the only similar utility that was ever used in the company was a one method class that returned raw `mysqli_query` results.
 
-I always use it whenever I need something easy and reliable. Sometimes, an Entity Manager is too much and you just need: one Class, no composer, zero namespaces, zero dependency inyection... just one Class.
+This class started as a modification of that one method class and saved me countless hours of work.
+
+I have been modifying the class through the years, to the point that now nothing is left from that first class I found when I started working.
+
+Of course, there are better implementations out there that accomplish the same; but I always use it whenever I need something easy and reliable.
+
+Sometimes, an Entity Manager is too much and you just need one class: no composer, no namespaces, no dependency inyection... just one class.
 
 The usage is pretty straightforward:
 
